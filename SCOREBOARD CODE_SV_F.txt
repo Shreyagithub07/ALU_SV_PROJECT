@@ -1,0 +1,124 @@
+//SCOREBOARD CODE ALU_SV
+`include "defines.sv"
+class alu_scoreboard;
+
+
+   alu_transaction ref2sb_trans,mon2sb_trans;
+
+   mailbox #(alu_transaction) mbx_rs;
+
+   mailbox #(alu_transaction) mbx_ms;
+   int res_match,oflow_match,cout_match,g_match,l_match,e_match,err_match,res_mismatch,oflow_mismatch,cout_mismatch,g_mismatch,l_mismatch,e_mismatch,err_mismatch;
+
+
+  function new(mailbox #(alu_transaction) mbx_rs,
+               mailbox #(alu_transaction) mbx_ms);
+    this.mbx_rs=mbx_rs;
+    this.mbx_ms=mbx_ms;
+  endfunction
+
+
+  task start();
+    for(int i=0;i<`no_of_trans;i++)
+      begin
+        ref2sb_trans=new();
+        mon2sb_trans=new();
+           fork
+      begin
+               mbx_rs.get(ref2sb_trans);
+
+      end
+      begin
+      mbx_ms.get(mon2sb_trans);
+
+              end
+              join
+      compare_report();
+      end
+endtask
+
+//$display(" getting in scoreboard res=%d",ref2sb_trans.RES);
+
+task compare_report();
+  #0;
+  if ((ref2sb_trans.RES != mon2sb_trans.RES) ||
+      (ref2sb_trans.OFLOW != mon2sb_trans.OFLOW) ||
+      (ref2sb_trans.COUT != mon2sb_trans.COUT) ||
+      (ref2sb_trans.G != mon2sb_trans.G) ||
+      (ref2sb_trans.L != mon2sb_trans.L) ||
+      (ref2sb_trans.E != mon2sb_trans.E) ||
+      (ref2sb_trans.ERR != mon2sb_trans.ERR)) begin
+
+    // One or more mismatches found
+    if (ref2sb_trans.RES != mon2sb_trans.RES) begin
+      $display("scoreboard ref res = %0d , scoreboard monitor res = %0d, time = %0t", ref2sb_trans.RES, mon2sb_trans.RES, $time);
+      ++res_mismatch;
+      $display("RES MATCH UNSUCCESSFUL. RES_MISMATCH count = %0d", res_mismatch);
+    end else begin
+      ++res_match;
+    end
+
+    if (ref2sb_trans.OFLOW != mon2sb_trans.OFLOW) begin
+      $display("scoreboard ref oflow = %0b , scoreboard monitor oflow = %0b, time = %0t", ref2sb_trans.OFLOW, mon2sb_trans.OFLOW, $time);
+      ++oflow_mismatch;
+      $display("OFLOW MATCH UNSUCCESSFUL. OFLOW_MISMATCH count = %0d", oflow_mismatch);
+    end else begin
+      ++oflow_match;
+    end
+
+    if (ref2sb_trans.COUT != mon2sb_trans.COUT) begin
+      $display("scoreboard ref cout = %0b , scoreboard monitor cout = %0b, time = %0t", ref2sb_trans.COUT, mon2sb_trans.COUT, $time);
+      ++cout_mismatch;
+      $display("COUT MATCH UNSUCCESSFUL. COUT_MISMATCH count = %0d", cout_mismatch);
+    end else begin
+      ++cout_match;
+    end
+
+    if (ref2sb_trans.G != mon2sb_trans.G) begin
+      $display("scoreboard ref g = %0b , scoreboard monitor g = %0b, time = %0t", ref2sb_trans.G, mon2sb_trans.G, $time);
+      ++g_mismatch;
+      $display("G MATCH UNSUCCESSFUL. G_MISMATCH count = %0d", g_mismatch);
+    end else begin
+      ++g_match;
+    end
+
+    if (ref2sb_trans.L != mon2sb_trans.L) begin
+      $display("scoreboard ref l = %0b , scoreboard monitor l = %0b, time = %0t", ref2sb_trans.L, mon2sb_trans.L, $time);
+      ++l_mismatch;
+      $display("L MATCH UNSUCCESSFUL. L_MISMATCH count = %0d", l_mismatch);
+    end else begin
+      ++l_match;
+    end
+
+    if (ref2sb_trans.E != mon2sb_trans.E) begin
+      $display("scoreboard ref e = %0b , scoreboard monitor e = %0b, time = %0t", ref2sb_trans.E, mon2sb_trans.E, $time);
+      ++e_mismatch;
+      $display("E MATCH UNSUCCESSFUL. E_MISMATCH count = %0d", e_mismatch);
+    end else begin
+      ++e_match;
+    end
+
+    if (ref2sb_trans.ERR != mon2sb_trans.ERR) begin
+      $display("scoreboard ref err = %0b , scoreboard monitor err = %0b, time = %0t", ref2sb_trans.ERR, mon2sb_trans.ERR, $time);
+      ++err_mismatch;
+      $display("ERR MATCH UNSUCCESSFUL. ERR_MISMATCH count = %0d", err_mismatch);
+    end else begin
+      ++err_match;
+    end
+
+  end else begin
+    // All matched
+    $display("All signals matched successfully at time %0t", $time);
+    ++res_match;
+    ++oflow_match;
+    ++cout_match;
+    ++g_match;
+    ++l_match;
+    ++e_match;
+    ++err_match;
+  end
+endtask
+
+endclass
+
+

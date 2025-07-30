@@ -1,0 +1,193 @@
+//REFERENCE MODEL
+`include "defines.sv"
+
+class alu_reference_model;
+
+  alu_transaction ref_trans;
+  mailbox #(alu_transaction) mbx_rs;
+  mailbox #(alu_transaction) mbx_dr;
+  virtual alu_if vif;
+  bit multi_flag;
+  int temp_mult_res;
+  int waiting_for_16_cycles = 0;
+  bit counter_16 = 0;
+
+  int err_counter = 0;
+
+  function new(mailbox #(alu_transaction) mbx_dr,
+               mailbox #(alu_transaction) mbx_rs,
+               virtual alu_if vif);
+    this.mbx_dr = mbx_dr;
+    this.mbx_rs = mbx_rs;
+    this.vif    = vif;
+  endfunction
+
+  function bit cycle_16_wait();
+    if (ref_trans.INP_VALID == 2'b11) begin
+      waiting_for_16_cycles = 0;
+      return 0;
+    end
+    else begin
+      if (ref_trans.INP_VALID == 'b11 || ( ref_trans.MODE &&  (ref_trans.INP_VALID == 'b01 && ref_trans.CMD inside { 'd4,'d5})
+            || (ref_trans.INP_VALID == 'b10 && ref_trans.CMD inside {'d6,'d7})
+            || ref_trans.MODE && (ref_trans.INP_VALID == 'b01 && ref_trans.CMD inside { 'd6,'d8,'d10})
+            || (ref_trans.INP_VALID == 'b10 && ref_trans.CMD inside { 'd7,'d9,'d11})
+            && counter_16 <= 'd16)) begin
+        return 1;
+      end
+      else
+        return 0;
+    end
+  endfunction
+
+  task start();
+    ref_trans = new();
+
+    for (int i = 0; i < `no_of_trans; i++) begin
+              mbx_dr.get(ref_trans);
+        if (vif.RST) begin
+          ref_trans.RES   = 'bz;
+          ref_trans.OFLOW = 'bz;
+          ref_trans.COUT  = 'bz;
+          ref_trans.G     = 'bz;
+          ref_trans.L     = 'bz;
+          ref_trans.E     = 'bz;
+          ref_trans.ERR   = 'bz;
+          err_counter     = 0;
+        end
+        else begin
+          if (!cycle_16_wait()) begin
+            if (ref_trans.CE) begin
+              case (ref_trans.INP_VALID)
+                2'b01, 2'b10, 2'b11: begin
+                  if (ref_trans.MODE == 1'b1) begin
+                    case (ref_trans.CMD)
+                      `add: begin
+                               ref_trans.RES = ref_trans.OPA + ref_trans.OPB;
+                               ref_trans.COUT=ref_trans.RES[`n]?1:0;
+                               end
+                      `sub:  begin
+                                ref_trans.RES = ref_trans.OPA - ref_trans.OPB;
+                                ref_trans.OFLOW=(ref_trans.OPA<ref_trans.OPB)?1:0;
+                                end
+                      `add_cin: begin
+                                ref_trans.RES = ref_trans.OPA + ref_trans.OPB + ref_trans.CIN;
+                                ref_trans.COUT=ref_trans.RES[`n]?1:0;
+                                end
+                      `sub_cin: begin
+                                  ref_trans.RES = ref_trans.OPA - ref_trans.OPB - ref_trans.CIN;
+                                  ref_trans.OFLOW = (ref_trans.OPA < ref_trans.OPB) || ((ref_trans.OPA - ref_trans.OPB) < ref_trans.CIN);
+                                end
+                      `inc_a:  ref_trans.RES = ref_trans.OPA + 1;
+                      `dec_a:  ref_trans.RES = ref_trans.OPA - 1;
+                      `inc_b:  ref_trans.RES = ref_trans.OPB + 1;
+                      `dec_b:  ref_trans.RES = ref_trans.OPB - 1;
+                      `cmp:    begin
+                                  ref_trans.RES = 0;
+                                  ref_trans.E = (ref_trans.OPA == ref_trans.OPB);
+                                  ref_trans.G = (ref_trans.OPA > ref_trans.OPB);
+                                  ref_trans.L = (ref_trans.OPA < ref_trans.OPB);
+                                end
+                      `mul_i:  ref_trans.RES = (ref_trans.OPA + 1) * (ref_trans.OPB + 1);
+                      `mul_s:  ref_trans.RES = (ref_trans.OPA << 1) * ref_trans.OPB;
+                      default: begin
+                                  ref_trans.RES   = 'z;
+                                  ref_trans.OFLOW = 'z;
+                                  ref_trans.COUT  = 'z;
+                                  ref_trans.G     = 'z;
+                                  ref_trans.L     = 'z;
+                                  ref_trans.E     = 'z;
+                                  ref_trans.ERR   = 1'b1;
+                                end
+                    endcase
+                  end else begin
+                    case (ref_trans.CMD)
+                      `and:    ref_trans.RES = ref_trans.OPA & ref_trans.OPB;
+                      `nand:   ref_trans.RES = ~(ref_trans.OPA & ref_trans.OPB);
+                      `or:     ref_trans.RES = ref_trans.OPA | ref_trans.OPB;
+                      `nor:    ref_trans.RES = ~(ref_trans.OPA | ref_trans.OPB);
+                      `xor:    ref_trans.RES = ref_trans.OPA ^ ref_trans.OPB;
+                      `xnor:   ref_trans.RES = ~(ref_trans.OPA ^ ref_trans.OPB);
+                      `not_a:  ref_trans.RES = ~ref_trans.OPA;
+                      `not_b:  ref_trans.RES = ~ref_trans.OPB;
+                      `shr1_a: ref_trans.RES = ref_trans.OPA >> 1;
+                      `shl1_a: ref_trans.RES = ref_trans.OPA << 1;
+                      `shr1_b: ref_trans.RES = ref_trans.OPB >> 1;
+                      `shl1_b: ref_trans.RES = ref_trans.OPB << 1;
+                      `rol_a_b:begin
+                                 if (ref_trans.OPB >= `n)
+                                   ref_trans.ERR = 1;
+                                 else
+                                   ref_trans.RES = (ref_trans.OPA << ref_trans.OPB) | (ref_trans.OPA >> (`n - ref_trans.OPB));
+                               end
+                      `ror_a_b:begin
+                                 if (ref_trans.OPB >= `n)
+                                   ref_trans.ERR = 1;
+                                 else
+                                   ref_trans.RES = (ref_trans.OPA >> ref_trans.OPB) | (ref_trans.OPA << (`n - ref_trans.OPB));
+                               end
+                      default: begin
+                                 ref_trans.RES   = 'bz;
+                                 ref_trans.COUT  = 'bz;
+                                 ref_trans.OFLOW = 'bz;
+                                 ref_trans.G     = 'bz;
+                                 ref_trans.E     = 'bz;
+                                 ref_trans.L     = 'bz;
+                                 ref_trans.ERR   = 1;
+                               end
+                    endcase
+                  end
+                end
+                default: begin
+                  ref_trans.RES   = 0;
+                  ref_trans.COUT  = 0;
+                  ref_trans.OFLOW = 0;
+                  ref_trans.G     = 0;
+                  ref_trans.E     = 0;
+                  ref_trans.L     = 0;
+                  ref_trans.ERR   = 1;
+                end
+              endcase
+            end else begin
+              ref_trans.RES   = 0;
+              ref_trans.COUT  = 0;
+              ref_trans.OFLOW = 0;
+              ref_trans.G     = 0;
+              ref_trans.E     = 0;
+              ref_trans.L     = 0;
+              ref_trans.ERR   = 1;
+            end
+          end
+
+          if(ref_trans.MODE && ref_trans.CMD inside {`mul_i, `mul_s}) begin
+            temp_mult_res = ref_trans.RES;
+            repeat(2) @(vif.REF_SB.ref_cb);
+            ref_trans.RES = temp_mult_res;
+            $display("mul_res:time=%d, RES=%d",$time,ref_trans.RES);
+            mbx_rs.put(ref_trans);
+
+          end else begin
+           repeat(2) @(vif.REF_SB.ref_cb);
+            $display("[REF] @%0t: reference model OPA=%0d, OPB=%0d, CIN=%0b, CE=%0b, MODE=%0b, INP_VALID=%02b, CMD=%0h, COUT=%d", $time, ref_trans.OPA, ref_trans.OPB, ref_trans.CIN, ref_trans.CE, ref_trans.MODE, ref_trans.INP_VALID, ref_trans.CMD,ref_trans.COUT);
+            $display("REF : [ %0d ]", ref_trans.RES);
+            mbx_rs.put(ref_trans);
+
+          end
+        end
+
+      //  if (cycle_16_wait()) begin
+        //  ref_trans.RES   = 'bz;
+         // ref_trans.COUT  = 'bz;
+        //  ref_trans.OFLOW = 'bz;
+         // ref_trans.G     = 'bz;
+        //  ref_trans.E     = 'bz;
+         // ref_trans.L     = 'bz;
+         // ref_trans.ERR   = 'bz;
+         // @(vif.REF_SB.ref_cb);
+         // $display("[REF] @%0t: Mail_box _ WAITING INP_VALID=01/10, CMD=%0h", $time, ref_trans.CMD);
+         // mbx_rs.put(ref_trans);
+       // end
+    end
+  endtask
+
+endclass

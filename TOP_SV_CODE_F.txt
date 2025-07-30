@@ -1,0 +1,99 @@
+`include "alu_pkg.sv"
+`include "alu_rtld.sv"
+`include "alu_interface.sv"
+
+module top( );
+  //Importing the alu package
+    import alu_pkg ::*;
+  //Declaring variables for clock and reset
+    bit CLK = 0;
+    bit RST;
+
+  //Generating the clock
+ // initial
+   // begin
+     always #5 CLK=~CLK;
+   // end
+  //Asserting and de-asserting the reset
+  initial
+    begin
+      @(posedge CLK);
+      RST=1;
+      repeat(2)@(posedge CLK);
+      RST=0;
+    end
+
+  //Instantiating the interface
+    alu_if intrf(CLK,RST);
+  //Instantiating the DUV
+    ALU_DESIGN DUV (
+    .OPA(intrf.OPA),
+    .OPB(intrf.OPB),
+    .CIN(intrf.CIN),
+    .RST(intrf.RST),
+    .CLK(intrf.CLK),
+    .CE(intrf.CE),
+    .MODE(intrf.MODE),
+    .INP_VALID(intrf.INP_VALID),
+    .CMD(intrf.CMD),
+    .RES(intrf.RES),
+    .OFLOW(intrf.OFLOW),
+    .COUT(intrf.COUT),
+    .G(intrf.G),
+    .L(intrf.L),
+    .E(intrf.E),
+    .ERR(intrf.ERR)
+  );
+//Calling the test's run task which starts the execution of the testbench architecture
+
+  alu_test tb;
+
+  test1 tb1;
+
+  test2 tb2;
+
+  test3 tb3;
+
+  test4 tb4;
+
+  test_regression tb_regression;
+
+  // Create objects in initial block
+
+  initial begin
+
+    tb  = new(intrf.DRV, intrf.MON, intrf.REF_SB);
+
+    tb1 = new(intrf.DRV, intrf.MON, intrf.REF_SB);
+
+    tb2 = new(intrf.DRV, intrf.MON, intrf.REF_SB);
+
+    tb3 = new(intrf.DRV, intrf.MON, intrf.REF_SB);
+
+    tb4 = new(intrf.DRV, intrf.MON, intrf.REF_SB);
+
+    tb_regression = new(intrf.DRV, intrf.MON, intrf.REF_SB);
+
+    // Call one or more test run() tasks
+
+    tb_regression.run();
+
+    tb.run();
+
+    tb1.run();
+
+    tb2.run();
+
+    tb3.run();
+
+    tb4.run();
+
+    #2000;
+
+    $finish();
+
+  end
+
+endmodule
+
+
